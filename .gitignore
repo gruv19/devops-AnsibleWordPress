@@ -1,0 +1,11 @@
+*.save
+secret_vars.yml
+
+# Editor derictories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
