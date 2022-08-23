@@ -1,0 +1,93 @@
+- hosts: webservers
+  vars_files:
+    - vars.yml
+    - secret_vars.yml
+  remote_user: '{{ remote_username }}'
+
+  tasks:
+    - name: Install Dependencies
+      become: yes
+      apt:
+        name: '{{ packs }}'
+        state: present
+        update_cache: yes
+    - name: Create the Installation directory
+      become: yes
+      file:
+        path: /srv/www
+        state: directory
+        owner: www-data
+    - name: Download Wordpress
+      get_url:
+        url: https://wordpress.org/latest.tar.gz
+        dest: /home/{{ remote_username }}/wordpress.tar.gz
+        mode: '777'
+    - name: Unarchive wordpress to installation directory
+      become: yes
+      unarchive:
+        src: /home/{{ remote_username }}/wordpress.tar.gz
+        dest: /srv/www
+        owner: www-data
+        group: www-data
+        remote_src: yes
+    - name: Add content to config file
+      become: yes
+      copy:
+        dest: /etc/apache2/sites-available/wordpress.conf
+        content: '{{ wordpress_conf }}'
+    - name: Enable site
+      become: yes
+      shell: /usr/sbin/a2ensite wordpress
+    - name: Enable URL rewriting
+      become: yes
+      shell: /usr/sbin/a2enmod rewrite
+    - name: disable default site
+      become: yes
+      shell: /usr/sbin/a2dissite 000-default
+    - name: Reload apache
+      become: yes
+      service:
+        name: apache2
+        state: reloaded
+    - name: Create a new database
+      become: yes
+      mysql_db:
+        name: '{{ db_name }}'
+        state: present
+        check_implicit_admin: yes
+        login_user: root
+    - name: Create database user
+      become: yes
+      mysql_user:
+        check_implicit_admin: yes
+        login_user: root
+        name: '{{ db_user }}'
+        password: '{{ db_pass }}'
+        priv: 'wordpress.*:SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,ALTER'
+    - name: Copy the sample configuration
+      become: yes
+      copy:
+        src: /srv/www/wordpress/wp-config-sample.php
+        dest: /srv/www/wordpress/wp-config.php
+        remote_src: yes
+        owner: www-data
+        group: www-data
+    - name: Set the database credentials in the configuration file
+      become: yes
+      shell: |
+        sed -i 's/database_name_here/{{ db_name }}/' /srv/www/wordpress/wp-config.php
+        sed -i 's/username_here/{{ db_user }}/' /srv/www/wordpress/wp-config.php
+        sed -i 's/password_here/{{ db_pass }}/' /srv/www/wordpress/wp-config.php
+    - name: random keys
+      become: yes
+      uri:
+        url: https://api.wordpress.org/secret-key/1.1/salt/
+        return_content: true
+        dest: /home/{{ remote_username }}/salt
+    - name: add salt
+      become: yes
+      shell: |
+        sed -i '/put your unique phrase/d' /srv/www/wordpress/wp-config.php
+        chmod o+w /srv/www/wordpress/wp-config.php
+        cat /home/{{ remote_username }}/salt >> /srv/www/wordpress/wp-config.php
+        chmod o-w /srv/www/wordpress/wp-config.php
